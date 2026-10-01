@@ -107,7 +107,10 @@ One interface, serving both the web UI and the API.
 preferring a publicly reachable one and falling back to any non-local address.
 The value is resolved when the daemon starts, so a service that has just gained
 or lost an address may need a restart before Memos advertises the new one. An
-origin pinned through the action is applied immediately.
+origin pinned through the action is applied immediately. Memos captures its
+public/private access mode once from this value on first start; afterwards the
+URL no longer controls access, which is changed in Memos under **Settings →
+System → Access and policies**.
 
 ## Installation and First-Run Flow
 
@@ -126,10 +129,10 @@ Two actions, neither needed on an ordinary day.
 
 **Set Instance URL** (`set-instance-url`)
 
-- **When to run it** — when RSS feeds, webhooks, or public anonymous access
-  must resolve to a stable external domain. Memos builds absolute URLs from
-  `MEMOS_INSTANCE_URL`, and the derived value follows whichever address the
-  user currently has enabled, which can change.
+- **When to run it** — when Memos should advertise a stable external origin
+  for generated links and trusted-origin checks. The derived value follows
+  whichever address the user currently has enabled, which can change. This
+  action does not control public access — that is a setting inside Memos.
 - **What it changes** — the `instanceUrl` key in `store.json`. Nothing inside
   Memos' own database is touched.
 - **Cost** — the daemon restarts to pick up the new environment; a few seconds
@@ -139,8 +142,8 @@ Two actions, neither needed on an ordinary day.
 - **Outputs** — the origin now in effect.
 
 The input is a dropdown of the `ui` interface's currently reachable non-local
-addresses, built when the form opens. An install with no non-local address
-enabled offers only **Auto** — see [Limitations](#limitations-and-differences).
+addresses, built when the form opens. An install with no non-local address to
+advertise offers only **Auto**.
 
 **Reset Admin Password** (`reset-password`)
 
@@ -148,15 +151,17 @@ enabled offers only **Auto** — see [Limitations](#limitations-and-differences)
   password-recovery flow of its own and no CLI, so without this the account is
   unreachable and the notes behind it are unreadable.
 - **What it changes** — the `password_hash` of the lowest-numbered account
-  holding the owner role, written straight into the SQLite database. Nothing
-  else in the database is touched, and no other account is affected.
+  holding the owner role, written straight into the SQLite database, plus that
+  account's stored refresh tokens (so its signed-in sessions end). No other
+  account is affected.
 - **Cost** — seconds. The service must be **stopped**, because the database is
   a file on the volume and nothing may hold it open while it is rewritten.
 - **Repeat safety** — safe to repeat; each run mints a new password and
   invalidates the previous one.
 - **What happens next** — start the service and sign in with the credentials
-  returned. Existing sessions are not revoked, matching what upstream does on
-  an ordinary password change.
+  returned. Sessions signed in with the old password are signed out, matching
+  what Memos does when a password is changed in the web UI; an already-issued
+  access token can remain valid for up to 15 minutes.
 - **Outputs** — the account's username, and the new password, masked and
   copyable. It is shown once per run.
 
@@ -168,10 +173,11 @@ One task, and it never blocks the service.
 | --------------- | ---------- | ----------------------------- |
 | Set Instance URL | `optional` | Every init, on every start    |
 
-It is a standing reminder that RSS and webhook users should pin an origin. It
-is raised unconditionally rather than on a condition, so it is present from the
-first start; running the action satisfies it, and satisfying it is permanent —
-the replay key is stable, so later starts do not raise it again.
+It is a standing reminder that generated links and trusted-origin checks should
+have a stable origin to point at. It is raised unconditionally rather than on a
+condition, so it is present from the first start; running the action satisfies
+it, and satisfying it is permanent — the replay key is stable, so later starts
+do not raise it again.
 
 ## Health Checks
 
@@ -194,7 +200,9 @@ quiescent and needs no dump step.
 
 That single volume is everything: notes, accounts, attachments, Memos' own
 settings, and the package's `store.json`. A restored instance is usable
-immediately with no resync and no credential to re-enter.
+immediately with no resync and no credential to re-enter. The one exception is
+an external attachment backend configured inside Memos (for example S3): those
+files live outside this volume and are not captured by a StartOS backup.
 
 ## Limitations and Differences
 
@@ -204,10 +212,11 @@ immediately with no resync and no credential to re-enter.
    one, so the first web sign-up takes the role and closing registration is
    done inside Memos. Recovering a lost password is the **Reset Admin
    Password** action's job — Memos itself has no recovery flow.
-3. **A private instance advertises no origin.** With no non-local address
-   enabled, `MEMOS_INSTANCE_URL` is empty and Memos treats itself as private:
-   RSS feeds and public anonymous access are unavailable until an address
-   exists or one is pinned.
+3. **Public access is a Memos setting, not an interface choice.** Memos
+   captures its public/private access mode once, from `MEMOS_INSTANCE_URL` at
+   first start; from then on it changes only under **Settings → System →
+   Access and policies** in Memos. Changing the instance URL later does not
+   flip it.
 4. **Attachments are backed up in full.** The volume is copied rather than
    synced incrementally, so backup size tracks total attachment size.
 

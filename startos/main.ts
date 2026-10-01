@@ -15,7 +15,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
     .const()
   const addressInfo = uiInterface?.addressInfo ?? null
   const first = (list: string[] | undefined) => list?.[0] ?? null
-  // Memos treats an empty MEMOS_INSTANCE_URL as "private instance".
+  // Access mode is captured once from this value on first start: a non-empty
+  // URL starts the instance public, an empty one private. Later changes to the
+  // URL do not alter it; it is changed only in Memos' own settings.
   const instanceUrl =
     instanceUrlPin ||
     first(addressInfo?.public.format('urlstring')) ||

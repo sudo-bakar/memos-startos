@@ -46,11 +46,15 @@ export const resetPassword = sdk.Action.withoutInput(
         // an older release can still carry HOST rows.
         // The hash reaches the script through the environment because a bcrypt
         // hash is full of `$` and the shell would expand it away.
+        // Refresh tokens live in user_setting under the key REFRESH_TOKENS;
+        // removing that row signs the account's sessions out, matching what
+        // Memos does when a password is changed or reset in the web UI.
         const script = `set -e
 DB=${dataDir}/memos_prod.db
 [ -f "$DB" ] || exit 2
 ID=$(sqlite3 "$DB" "SELECT id FROM user WHERE role IN ('HOST','ADMIN') ORDER BY id LIMIT 1")
 [ -n "$ID" ] || exit 2
+sqlite3 "$DB" "DELETE FROM user_setting WHERE user_id=$ID AND key='REFRESH_TOKENS'"
 sqlite3 "$DB" "UPDATE user SET password_hash='$HASH', updated_ts=strftime('%s','now') WHERE id=$ID"
 sqlite3 "$DB" "SELECT username FROM user WHERE id=$ID"`
 
@@ -76,7 +80,7 @@ sqlite3 "$DB" "SELECT username FROM user WHERE id=$ID"`
       version: '1',
       title: i18n('Admin Password Reset'),
       message: i18n(
-        'The administrator password has been reset. Save these credentials somewhere safe — they are shown once. Start the service to sign in.',
+        'The administrator password has been reset. Save these credentials somewhere safe — they are shown once. Sessions signed in with the old password have been signed out. Start the service to sign in.',
       ),
       result: {
         type: 'group',
